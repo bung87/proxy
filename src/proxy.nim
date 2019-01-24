@@ -15,8 +15,6 @@ type ProxyServer* = object
   localPort*:int
   server*:AsyncHttpServer
 
-
-
 proc cb*(req: Request,publicAddrs:PublicAddrs,rulesMap:RulesMap) {.async.} =
   # debugEcho req
   var client = newAsyncHttpClient()
@@ -27,6 +25,8 @@ proc cb*(req: Request,publicAddrs:PublicAddrs,rulesMap:RulesMap) {.async.} =
     cloneUrl.port = req.target.port.intToStr
   
   let response = await client.request($cloneUrl, httpMethod = req.reqMethod, body = req.body,headers=req.headers)
+  if req.url.path == "/paas/check.php":
+    debugEcho response.headers
   var body = ""
   if response.headers.hasKey("Location"):
     var location = response.headers["Location"].toString
@@ -35,8 +35,20 @@ proc cb*(req: Request,publicAddrs:PublicAddrs,rulesMap:RulesMap) {.async.} =
       response.headers["Location"] = location
   else:
     body = await response.bodyStream.readAll()
+    var encoding:ZStreamHeader
+    
     if response.headers.hasKey("content-encoding"):
-      body = uncompress(body)
+      debugEcho response.headers["content-encoding"].toString
+      case response.headers["content-encoding"].toString:
+        of "gzip":
+          encoding = ZStreamHeader.GZIP_STREAM
+        of "deflate":
+          encoding = ZStreamHeader.RAW_DEFLATE
+        of "compress":
+          encoding = ZStreamHeader.ZLIB_STREAM
+      body = uncompress(body,stream = encoding)
+      debugEcho req.url
+      debugEcho body
     var matchedRules = initOrderedSet[string]()
     for pattern,rules in rulesMap:
       if fnmatch(req.url.path, pattern):
@@ -46,6 +58,8 @@ proc cb*(req: Request,publicAddrs:PublicAddrs,rulesMap:RulesMap) {.async.} =
     debugEcho matchedRules
     if response.headers.hasKey("Content-Length"):
       response.headers.del("Content-Length")
+    if response.headers.hasKey("transfer-encoding"):
+      response.headers.del("transfer-encoding")
     var arr:seq[string]
     for rule in matchedRules:
       if rule == "<public_addrs>":
@@ -58,7 +72,7 @@ proc cb*(req: Request,publicAddrs:PublicAddrs,rulesMap:RulesMap) {.async.} =
           debugEcho("$#\n" % [arr.join("->")])
           body = body.replace(arr[0],arr[1])
     if response.headers.hasKey("content-encoding"):
-      body = compress(body)
+      body = compress(body,stream = encoding)
   await req.respond(response.code,body,response.headers)
 
 proc initProxyServer*(targetHost:string,targetPort:int,localPort:int) : ProxyServer =

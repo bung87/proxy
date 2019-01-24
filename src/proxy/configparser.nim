@@ -56,12 +56,12 @@ proc read*(self:var ConfigParser,path:string) =
                         self.data[lastSection][lastOption] = ret[1]
                     else:
                        if line.startsWith(' '):
-                        self.data[lastSection].mget(lastOption).add "\n$#" % ret
+                        self.data[lastSection][lastOption].add "\n$#" % ret
                        else:
                         self.data[lastSection][self.optionxform(ret[0])] = ""
                 else:
                     if self.data[lastSection].hasKeyOrPut(lastOption,line):
-                        self.data[lastSection].mget(lastOption).add "\n$#" % [line]
+                        self.data[lastSection][lastOption].add "\n$#" % [line]
                 isOption = false
     debugEcho self.data
     fs.close()
