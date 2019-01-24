@@ -48,6 +48,8 @@ type
   Target* = object
     host*:string
     port*:int
+  PublicAddrs* = OrderedTable[string,string]
+  RulesMap* = OrderedTable[string,seq[string]]
   Request* = object
     client*: AsyncSocket # TODO: Separate this into a Response object?
     reqMethod*: HttpMethod
@@ -60,6 +62,8 @@ type
 
   AsyncHttpServer* = ref object
     target*:Target
+    publicAddrs*:PublicAddrs
+    rulesMap*:RulesMap
     socket: AsyncSocket
     reuseAddr: bool
     reusePort: bool
@@ -107,10 +111,14 @@ proc respond*(req: Request, code: HttpCode, content: string,
 
   if headers != nil:
     msg.addHeaders(headers)
+  # if not headers.hasKey("Content-Length") and not headers.hasKey("Transfer-Encoding"):
   msg.add("Content-Length: ")
-  # this particular way saves allocations:
+    # this particular way saves allocations:
   msg.add content.len
+  
   msg.add "\c\L\c\L"
+  # else:
+  #   msg.add "\c\L"
   msg.add(content)
   result = req.client.send(msg)
 
@@ -153,7 +161,7 @@ proc parseUppercaseMethod(name: string): HttpMethod =
 proc processRequest(server: AsyncHttpServer, req: FutureVar[Request],
                     client: AsyncSocket,
                     address: string, lineFut: FutureVar[string],
-                    callback: proc (request: Request):
+                    callback: proc (request: Request,publicAddrs:PublicAddrs,rulesMap:RulesMap):
                       Future[void] {.closure, gcsafe.}) {.async.} =
 
   # Alias `request` to `req.mget()` so we don't have to write `mget` everywhere.
@@ -264,7 +272,7 @@ proc processRequest(server: AsyncHttpServer, req: FutureVar[Request],
     return
 
   # Call the user's callback.
-  await callback(request)
+  await callback(request,server.publicAddrs,server.rulesMap)
 
   if "upgrade" in request.headers.getOrDefault("connection"):
     return
@@ -284,7 +292,7 @@ proc processRequest(server: AsyncHttpServer, req: FutureVar[Request],
     return
 
 proc processClient(server: AsyncHttpServer, client: AsyncSocket, address: string,
-                   callback: proc (request: Request):
+                   callback: proc (request: Request,publicAddrs:PublicAddrs,rulesMap:RulesMap):
                       Future[void] {.closure, gcsafe.}) {.async.} =
   var request = newFutureVar[Request]("asynchttpserver.processClient")
   request.mget().url = initUri()
@@ -296,7 +304,7 @@ proc processClient(server: AsyncHttpServer, client: AsyncSocket, address: string
     await processRequest(server, request, client, address, lineFut, callback)
 
 proc serve*(server: AsyncHttpServer, port: Port,
-            callback: proc (request: Request): Future[void] {.closure,gcsafe.},
+            callback: proc (request: Request,publicAddrs:PublicAddrs,rulesMap:RulesMap): Future[void] {.closure,gcsafe.},
             address = "") {.async.} =
   ## Starts the process of listening for incoming HTTP connections on the
   ## specified address and port.
@@ -322,16 +330,16 @@ proc close*(server: AsyncHttpServer) =
   ## Terminates the async http server instance.
   server.socket.close()
 
-when not defined(testing) and isMainModule:
-  proc main =
-    var server = newAsyncHttpServer()
-    proc cb(req: Request) {.async.} =
-      #echo(req.reqMethod, " ", req.url)
-      #echo(req.headers)
-      let headers = {"Date": "Tue, 29 Apr 2014 23:40:08 GMT",
-          "Content-type": "text/plain; charset=utf-8"}
-      await req.respond(Http200, "Hello World", headers.newHttpHeaders())
+# when not defined(testing) and isMainModule:
+#   proc main =
+#     var server = newAsyncHttpServer()
+#     proc cb(req: Request) {.async.} =
+#       #echo(req.reqMethod, " ", req.url)
+#       #echo(req.headers)
+#       let headers = {"Date": "Tue, 29 Apr 2014 23:40:08 GMT",
+#           "Content-type": "text/plain; charset=utf-8"}
+#       await req.respond(Http200, "Hello World", headers.newHttpHeaders())
 
-    asyncCheck server.serve(Port(5555), cb)
-    runForever()
-  main()
+#     asyncCheck server.serve(Port(5555), cb)
+#     runForever()
+#   main()

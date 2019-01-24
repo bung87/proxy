@@ -10,4 +10,5 @@ srcDir        = "src"
 # Dependencies
 
 requires "nim >= 0.18.1"
+requires "fnmatch"
 
