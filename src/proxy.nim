@@ -31,18 +31,7 @@ proc cb*(req: Request,server: AsyncHttpServer) {.async.} =
       location = location.replace(k,v)
       response.headers["Location"] = location
   else:
-    body = await response.bodyStream.readAll()
-    var encoding:ZStreamHeader
-    if response.headers.hasKey("content-encoding"):
-      debugEcho response.headers["content-encoding"].toString
-      case response.headers["content-encoding"].toString:
-        of "gzip":
-          encoding = ZStreamHeader.GZIP_STREAM
-        of "deflate":
-          encoding = ZStreamHeader.RAW_DEFLATE
-        of "compress":
-          encoding = ZStreamHeader.ZLIB_STREAM
-      body = uncompress(body,stream = encoding)
+    
     var matchedRules = initOrderedSet[string]()
     for pattern,rules in server.rulesMap:
       if fnmatch(req.url.path, pattern):
@@ -54,6 +43,18 @@ proc cb*(req: Request,server: AsyncHttpServer) {.async.} =
       response.headers.del("Content-Length")
     if response.headers.hasKey("transfer-encoding"):
       response.headers.del("transfer-encoding")
+    body = await response.bodyStream.readAll()
+    var encoding:ZStreamHeader
+    if len(matchedRules) > 0 and response.headers.hasKey("content-encoding"):
+      debugEcho response.headers["content-encoding"].toString
+      case response.headers["content-encoding"].toString:
+        of "gzip":
+          encoding = ZStreamHeader.GZIP_STREAM
+        of "deflate":
+          encoding = ZStreamHeader.RAW_DEFLATE
+        of "compress":
+          encoding = ZStreamHeader.ZLIB_STREAM
+      body = uncompress(body,stream = encoding)
     var arr:seq[string]
     for rule in matchedRules:
       if rule == "<public_addrs>":
@@ -65,7 +66,7 @@ proc cb*(req: Request,server: AsyncHttpServer) {.async.} =
               continue
           debugEcho("$#\n" % [arr.join("->")])
           body = body.replace(arr[0],arr[1])
-    if response.headers.hasKey("content-encoding"):
+    if len(matchedRules) > 0 and response.headers.hasKey("content-encoding"):
       body = compress(body,stream = encoding)
   await req.respond(response.code,body,response.headers)
 
@@ -80,12 +81,17 @@ proc serve(filepath:string){.async.} =
   var rules:seq[string]
   var cachedSections = initOrderedTable[string,OrderedTable[string,seq[string]]]()
   var striped:string
-  var publicAddrs:OrderedTable[string,string]
+  var publicAddrs = initOrderedTable[string,string]()
   var rulesMap = initOrderedTable[string,seq[string]]()
   for section in config.sections():
     if section == "public_addrs":
-        publicAddrs = config.items(section)
-        continue
+      for k,v in config.items(section):
+        if k.find(':') == -1:
+          publicAddrs.add("$#:80" % [k],v)
+          publicAddrs.add(k,v)
+        else:
+          publicAddrs.add(k,v)
+      continue
     rulesMap.clear
     for p, _ in config.items(section):
         rules = config.getlist(section,p)
