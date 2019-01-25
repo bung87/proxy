@@ -31,7 +31,6 @@ proc cb*(req: Request,server: AsyncHttpServer) {.async.} =
       location = location.replace(k,v)
       response.headers["Location"] = location
   else:
-    
     var matchedRules = initOrderedSet[string]()
     for pattern,rules in server.rulesMap:
       if fnmatch(req.url.path, pattern):
