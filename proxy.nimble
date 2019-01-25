@@ -5,7 +5,7 @@ author        = "zhoupeng"
 description   = "A proxy server"
 license       = "MIT"
 srcDir        = "src"
-
+bin = @["proxy"]
 
 # Dependencies
 

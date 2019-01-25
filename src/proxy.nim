@@ -23,20 +23,6 @@ proc cb*(req: Request,server: AsyncHttpServer) {.async.} =
   var agent = newAsyncHttpClient()
   if req.target.port != 80:
     cloneUrl.port = req.target.port.intToStr
-  var (_, _, ext) = splitFile(req.url.path)
-  if ext in [".jpg",".png",".ico",".gif",".eot",".woff2",".woff",".ttf",".svg",".swf",".map"]:
-    debugEcho ext
-    var agent = newAsyncSocket()
-    await agent.connect(server.target.host,Port(server.target.port))
-    var httpHeader = generateHeaders(cloneUrl,"get",req.headers,"",nil)
-    await agent.send(httpHeader)
-    let buffLen = 1024*8
-    while true:
-      let line = await agent.recv(buffLen)
-      if line.len == 0: break
-      await req.client.send(line)
-    # agent.close
-    return
   let response = await agent.request($cloneUrl, httpMethod = req.reqMethod, body = req.body,headers=req.headers)
   var body = ""
   if response.headers.hasKey("Location"):
