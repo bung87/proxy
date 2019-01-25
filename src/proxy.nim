@@ -7,6 +7,7 @@ import ./proxy/asynchttpserver
 import fnmatch
 import sets
 import zip/zlib
+include httpclient
 export asyncnet, asyncdispatch
 
 type ProxyServer* = object
@@ -15,28 +16,37 @@ type ProxyServer* = object
   localPort*:int
   server*:AsyncHttpServer
 
-proc cb*(req: Request,publicAddrs:PublicAddrs,rulesMap:RulesMap) {.async.} =
-  # debugEcho req
-  var client = newAsyncHttpClient()
+proc cb*(req: Request,server: AsyncHttpServer) {.async.} =
   var cloneUrl = req.url
   cloneUrl.scheme = "http"
   cloneUrl.hostname = req.target.host
+  var agent = newAsyncHttpClient()
   if req.target.port != 80:
     cloneUrl.port = req.target.port.intToStr
-  
-  let response = await client.request($cloneUrl, httpMethod = req.reqMethod, body = req.body,headers=req.headers)
-  if req.url.path == "/paas/check.php":
-    debugEcho response.headers
+  var (_, _, ext) = splitFile(req.url.path)
+  if ext in [".jpg",".png",".ico",".gif",".eot",".woff2",".woff",".ttf",".svg",".swf",".map"]:
+    debugEcho ext
+    var agent = newAsyncSocket()
+    await agent.connect(server.target.host,Port(server.target.port))
+    var httpHeader = generateHeaders(cloneUrl,"get",req.headers,"",nil)
+    await agent.send(httpHeader)
+    let buffLen = 1024*8
+    while true:
+      let line = await agent.recv(buffLen)
+      if line.len == 0: break
+      await req.client.send(line)
+    # agent.close
+    return
+  let response = await agent.request($cloneUrl, httpMethod = req.reqMethod, body = req.body,headers=req.headers)
   var body = ""
   if response.headers.hasKey("Location"):
     var location = response.headers["Location"].toString
-    for k,v in publicAddrs:
+    for k,v in server.publicAddrs:
       location = location.replace(k,v)
       response.headers["Location"] = location
   else:
     body = await response.bodyStream.readAll()
     var encoding:ZStreamHeader
-    
     if response.headers.hasKey("content-encoding"):
       debugEcho response.headers["content-encoding"].toString
       case response.headers["content-encoding"].toString:
@@ -47,10 +57,8 @@ proc cb*(req: Request,publicAddrs:PublicAddrs,rulesMap:RulesMap) {.async.} =
         of "compress":
           encoding = ZStreamHeader.ZLIB_STREAM
       body = uncompress(body,stream = encoding)
-      debugEcho req.url
-      debugEcho body
     var matchedRules = initOrderedSet[string]()
-    for pattern,rules in rulesMap:
+    for pattern,rules in server.rulesMap:
       if fnmatch(req.url.path, pattern):
         for p in rules:
           discard matchedRules.containsOrIncl p
@@ -63,7 +71,7 @@ proc cb*(req: Request,publicAddrs:PublicAddrs,rulesMap:RulesMap) {.async.} =
     var arr:seq[string]
     for rule in matchedRules:
       if rule == "<public_addrs>":
-          for k,v in publicAddrs:
+          for k,v in server.publicAddrs:
               body = body.replace(k,v)
       else:
           arr = rule.split('\t')
@@ -83,9 +91,7 @@ proc initProxyServer*(targetHost:string,targetPort:int,localPort:int) : ProxySer
 proc serve(filepath:string){.async.} =
   var config = initConfigParser()
   config.read(filepath)
-  
   var rules:seq[string]
-  
   var cachedSections = initOrderedTable[string,OrderedTable[string,seq[string]]]()
   var striped:string
   var publicAddrs:OrderedTable[string,string]

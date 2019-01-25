@@ -33,7 +33,7 @@
 
 import tables, asyncnet, asyncdispatch, parseutils, uri, strutils
 import httpcore
-
+import httpclient
 export httpcore except parseHeader
 
 const
@@ -61,6 +61,7 @@ type
     body*: string
 
   AsyncHttpServer* = ref object
+    # agent*:AsyncHttpClient
     target*:Target
     publicAddrs*:PublicAddrs
     rulesMap*:RulesMap
@@ -77,6 +78,7 @@ proc newAsyncHttpServer*(target:Target,reuseAddr = true, reusePort = false,
   result.reuseAddr = reuseAddr
   result.reusePort = reusePort
   result.maxBody = maxBody
+  # result.agent = newAsyncHttpClient()
 
 
 proc addHeaders(msg: var string, headers: HttpHeaders) =
@@ -161,7 +163,7 @@ proc parseUppercaseMethod(name: string): HttpMethod =
 proc processRequest(server: AsyncHttpServer, req: FutureVar[Request],
                     client: AsyncSocket,
                     address: string, lineFut: FutureVar[string],
-                    callback: proc (request: Request,publicAddrs:PublicAddrs,rulesMap:RulesMap):
+                    callback: proc (request: Request,server: AsyncHttpServer):
                       Future[void] {.closure, gcsafe.}) {.async.} =
 
   # Alias `request` to `req.mget()` so we don't have to write `mget` everywhere.
@@ -272,7 +274,7 @@ proc processRequest(server: AsyncHttpServer, req: FutureVar[Request],
     return
 
   # Call the user's callback.
-  await callback(request,server.publicAddrs,server.rulesMap)
+  await callback(request,server)
 
   if "upgrade" in request.headers.getOrDefault("connection"):
     return
@@ -292,7 +294,7 @@ proc processRequest(server: AsyncHttpServer, req: FutureVar[Request],
     return
 
 proc processClient(server: AsyncHttpServer, client: AsyncSocket, address: string,
-                   callback: proc (request: Request,publicAddrs:PublicAddrs,rulesMap:RulesMap):
+                   callback: proc (request: Request,server: AsyncHttpServer):
                       Future[void] {.closure, gcsafe.}) {.async.} =
   var request = newFutureVar[Request]("asynchttpserver.processClient")
   request.mget().url = initUri()
@@ -304,7 +306,7 @@ proc processClient(server: AsyncHttpServer, client: AsyncSocket, address: string
     await processRequest(server, request, client, address, lineFut, callback)
 
 proc serve*(server: AsyncHttpServer, port: Port,
-            callback: proc (request: Request,publicAddrs:PublicAddrs,rulesMap:RulesMap): Future[void] {.closure,gcsafe.},
+            callback: proc (request: Request,server: AsyncHttpServer): Future[void] {.closure,gcsafe.},
             address = "") {.async.} =
   ## Starts the process of listening for incoming HTTP connections on the
   ## specified address and port.
