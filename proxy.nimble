@@ -11,4 +11,5 @@ bin = @["proxy"]
 
 requires "nim >= 0.18.1"
 requires "fnmatch"
+requires "zip"
 
