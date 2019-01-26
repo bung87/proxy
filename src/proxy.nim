@@ -30,6 +30,7 @@ proc cb*(req: Request,server: AsyncHttpServer) {.async.} =
     for k,v in server.publicAddrs:
       location = location.replace(k,v)
       response.headers["Location"] = location
+    agent.close
   else:
     var matchedRules = initOrderedSet[string]()
     for pattern,rules in server.rulesMap:
@@ -43,6 +44,7 @@ proc cb*(req: Request,server: AsyncHttpServer) {.async.} =
     if response.headers.hasKey("transfer-encoding"):
       response.headers.del("transfer-encoding")
     body = await response.bodyStream.readAll()
+    agent.close
     var encoding:ZStreamHeader
     if len(matchedRules) > 0 and response.headers.hasKey("content-encoding"):
       debugEcho response.headers["content-encoding"].toString
