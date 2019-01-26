@@ -24,7 +24,7 @@ nc.host2.com=localhost:8090
 
 [nc.host2.com:80:8090]
 /js/app.*.js:
-    <public_addrs>
+    &lt;public_addrs&gt;
 /portal/frame/device_pc/script/compressed/*.js:
     window.top.$<kbd>tab</kbd>if typeof window.top.$ === "function" window.top.$  
 </pre>
