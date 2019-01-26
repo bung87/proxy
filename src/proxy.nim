@@ -1,13 +1,15 @@
 import ./proxy/configparser
 import strutils
 import os
-import asyncnet, asyncdispatch,httpclient
+import asyncnet, asyncdispatch
 import uri
-import ./proxy/asynchttpserver
 import fnmatch
 import sets
 import zip/zlib
+
 include httpclient
+include ./proxy/asynchttpserver
+
 export asyncnet, asyncdispatch
 
 type ProxyServer* = object
@@ -23,7 +25,12 @@ proc cb*(req: Request,server: AsyncHttpServer) {.async.} =
   var agent = newAsyncHttpClient()
   if req.target.port != 80:
     cloneUrl.port = req.target.port.intToStr
-  let response = await agent.request($cloneUrl, httpMethod = req.reqMethod, body = req.body,headers=req.headers)
+  var response:AsyncResponse
+  try:
+    response = await agent.request($cloneUrl, httpMethod = req.reqMethod, body = req.body,headers=req.headers)
+  except:
+    await req.respondError(Http500)
+    return
   var body = ""
   if response.headers.hasKey("Location"):
     var location = response.headers["Location"].toString
