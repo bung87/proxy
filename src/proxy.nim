@@ -46,6 +46,20 @@ proc cb*(req: Request,server: AsyncHttpServer) {.async.} =
           discard matchedRules.containsOrIncl p
     debugEcho $cloneUrl
     debugEcho matchedRules
+    # @TODO streaming response,or redirect static file request to target server 
+    # if response.headers["Content-Type"].find("image") != -1:
+    #   var msg = "HTTP/1.1 " & $response.code & "\c\L"
+    #   msg.addHeaders(response.headers)
+    #   msg.add "\c\L\c\L"
+    #   await req.client.send(msg)
+    #   let timeout = sleepAsync(1 * 1_000)
+    #   while not timeout.finished():
+    #     let (hasData,data) = await response.bodyStream.read
+    #     if hasData == false:
+    #       break
+    #     await req.client.send(data)
+    #   agent.close
+    #   return
     if response.headers.hasKey("Content-Length"):
       response.headers.del("Content-Length")
     if response.headers.hasKey("transfer-encoding"):
