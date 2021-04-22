@@ -47,23 +47,28 @@ proc cb*(req: Request,server: AsyncHttpServer) {.async.} =
     debugEcho $cloneUrl
     debugEcho matchedRules
     # @TODO streaming response,or redirect static file request to target server 
-    # if response.headers["Content-Type"].find("image") != -1:
-    #   var msg = "HTTP/1.1 " & $response.code & "\c\L"
-    #   msg.addHeaders(response.headers)
-    #   msg.add "\c\L\c\L"
-    #   await req.client.send(msg)
-    #   let timeout = sleepAsync(1 * 1_000)
-    #   while not timeout.finished():
-    #     let (hasData,data) = await response.bodyStream.read
-    #     if hasData == false:
-    #       break
-    #     await req.client.send(data)
-    #   agent.close
-    #   return
+    if response.headers["Content-Type"].find("image") != -1:
+      var msg = "HTTP/1.1 " & $response.code & "\c\L"
+      msg.addHeaders(response.headers)
+      msg.add "\c\L\c\L"
+      var reqs = newSeq[Future[void]]()
+      reqs.add req.client.send(msg)
+      let timeout = sleepAsync(1 * 1_000)
+      
+      while true:
+        let (hasData,data) = waitfor response.bodyStream.read
+        if hasData == false:
+          break
+        reqs.add req.client.send(data)
+      let a = all(reqs)
+      a.addCallback proc() = agent.close
+      await a
+     
     if response.headers.hasKey("Content-Length"):
       response.headers.del("Content-Length")
     if response.headers.hasKey("transfer-encoding"):
       response.headers.del("transfer-encoding")
+
     body = await response.bodyStream.readAll()
     agent.close
     var encoding:ZStreamHeader

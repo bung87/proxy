@@ -14,6 +14,7 @@ type
 proc initConfigParser*():ConfigParser =
     result.optionxform = toLower
 
+
 proc read*(self:var ConfigParser,path:string) =
     var fs = newFileStream(path, fmRead)
     var rawline,line:string
